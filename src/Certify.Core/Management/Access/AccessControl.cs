@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Certify.Models.Providers;
+using Newtonsoft.Json;
 
 namespace Certify.Core.Management.Access
 {
@@ -38,6 +40,12 @@ namespace Certify.Core.Management.Access
         public static Role CertificateConsumer { get; } = new Role("cert_consumer", "Certificate Consumer", "User of a given certificate");
     }
 
+    public class StandardResourceTypes
+    {
+        public static string System { get; } = "system";
+        public static string Domain { get; } = "domain";
+    }
+
     public class Role
     {
         public string Id { get; set; }
@@ -53,84 +61,42 @@ namespace Certify.Core.Management.Access
         }
     }
 
-    public class DomainUserRole
+    public class ResourceAssignedRole
     {
-        public string DomainId { get; set; }
-        public string UserId { get; set; }
+        public string PrincipleId { get; set; }
         public string RoleId { get; set; }
 
     }
     /// <summary>
-    /// Define a domain and who the controlling users are
+    /// Define a domain or resource and who the controlling users are
     /// </summary>
-    public class DomainProfile
+    public class ResourceProfile
     {
-        public string DomainName { get; set; }
-        public List<string> OwnerIds { get; set; }
-        public List<Certify.Models.CertRequestChallengeConfig> DefaultChallenges { get; set; }
+        public string ResourceType { get; set; }
+        public string Identifier { get; set; }
+        public List<ResourceAssignedRole> AssignedRoles { get; set; }
+        // public List<Certify.Models.CertRequestChallengeConfig> DefaultChallenges { get; set; }
+    }
+
+
+    public interface IObjectStore
+    {
+        Task<bool> Save<T>(string id, object item);
+        Task<T> Load<T>(string id);
     }
 
     public class AccessControl
     {
-        public async Task<List<SecurityPrinciple>> GetSecurityPrinciples()
+        IObjectStore _store;
+        ILog _log;
+
+        public AccessControl(ILog log, IObjectStore store)
         {
-            return new List<SecurityPrinciple> {
-                new SecurityPrinciple {
-                    Id = "admin_01",
-                    Username = "admin",
-                    Description = "Administrator account",
-                    Email="info@test.com", Password="ABCDEFG",
-                    PrincipleType= SecurityPrincipleType.User,
-                    SystemRoleIds=new List<string>{ StandardRoles.Administrator.Id }
-                },
-                new SecurityPrinciple {
-                    Id = "domain_owner_01",
-                    Username = "demo_owner",
-                    Description = "Example domain owner",
-                    Email="domains@test.com", Password="ABCDEFG",
-                    PrincipleType= SecurityPrincipleType.User,
-                    SystemRoleIds=new List<string>{ StandardRoles.DomainOwner.Id }
-                },
-                 new SecurityPrinciple {
-                    Id = "devops_user_01",
-                    Username = "devops_01",
-                    Description = "Example devops user",
-                    Email="devops01@test.com", Password="ABCDEFG",
-                    PrincipleType= SecurityPrincipleType.User,
-                    SystemRoleIds=new List<string>{ StandardRoles.CertificateConsumer.Id, StandardRoles.DomainRequestor.Id }
-                },
-                  new SecurityPrinciple {
-                    Id = "devops_app_01",
-                    Username = "devapp_01",
-                    Description = "Example devops app domain consumer",
-                    Email="dev_app01@test.com", Password="ABCDEFG",
-                    PrincipleType= SecurityPrincipleType.User,
-                    SystemRoleIds=new List<string>{ StandardRoles.CertificateConsumer.Id }
-                }
-            };
+            _store = store;
+            _log = log;
         }
 
-        public async Task AddSecurityPrinciple(SecurityPrinciple user, string contextUserId)
-        {
-
-        }
-
-        public async Task UpdateSecurityPrinciple(SecurityPrinciple user, string contextUserId)
-        {
-
-        }
-
-        public async Task UpdateSecurityPrincipleRoles(string userId, List<string> roles, string contextUserId)
-        {
-
-        }
-
-        public async Task DeleteSecurityPrinciple(string userId, string contextUserId)
-        {
-
-        }
-
-        public async Task<List<Role>> GetRoles()
+        public async Task<List<Role>> GetSystemRoles()
         {
             return new List<Role>
             {
@@ -140,13 +106,155 @@ namespace Certify.Core.Management.Access
             };
         }
 
-        public async Task<List<DomainProfile>> GetDomains(string contextUserId)
+        public async Task<List<SecurityPrinciple>> GetSecurityPrinciples()
         {
-            return new List<DomainProfile>
-            {
-                new DomainProfile{ DomainName="projectbids.co.uk" },
-                new DomainProfile{ DomainName="dev.projectbids.co.uk" }
-            };
+            return await _store.Load<List<SecurityPrinciple>>("principles");
         }
+
+        public async Task<bool> AddSecurityPrinciple(SecurityPrinciple principle, string contextUserId, bool bypassIntegrityCheck =false)
+        {
+            if (!await IsPrincipleInRole(contextUserId, StandardRoles.Administrator.Id, contextUserId) && !bypassIntegrityCheck)
+            {
+                _log?.Warning($"User {contextUserId} attempted to use AddSecurityPrinciple [{principle?.Id}] without being in required role.");
+                return false;
+            }
+
+            var principles = await GetSecurityPrinciples();
+            principles.Add(principle);
+            await _store.Save<List<SecurityPrinciple>>("principles", principles);
+
+            _log?.Information($"User {contextUserId} added security principle [{principle.Id}] {principle.Username}");
+            return true;
+        }
+
+        public async Task<bool> UpdateSecurityPrinciple(SecurityPrinciple principle, string contextUserId)
+        {
+
+            if (!await IsPrincipleInRole(contextUserId, StandardRoles.Administrator.Id, contextUserId))
+            {
+                _log?.Warning($"User {contextUserId} attempted to use UpdateSecurityPrinciple [{principle?.Id}] without being in required role.");
+                return false;
+            }
+
+            var principles = await GetSecurityPrinciples();
+
+            var existing = principles.Find(p => p.Id == principle.Id);
+            if (existing != null)
+            {
+                principles.Remove(existing);
+            }
+
+            principles.Add(principle);
+            await _store.Save<List<SecurityPrinciple>>("principles", principles);
+
+            _log?.Information($"User {contextUserId} updated security principle [{principle.Id}] {principle.Username}");
+            return true;
+        }
+
+        /// <summary>
+        /// delete a single security principle
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="contextUserId"></param>
+        /// <returns></returns>
+        public async Task<bool> DeleteSecurityPrinciple(string id, string contextUserId)
+        {
+            if (!await IsPrincipleInRole(contextUserId, StandardRoles.Administrator.Id, contextUserId))
+            {
+                _log?.Warning($"User {contextUserId} attempted to use DeleteSecurityPrinciple [{id}] without being in required role.");
+                return false;
+            }
+
+            if (id == contextUserId)
+            {
+                _log?.Information($"User {contextUserId} tried to delete themselves.");
+                return false;
+            }
+
+            var principles = await GetSecurityPrinciples();
+
+            var existing = principles.Find(p => p.Id == id);
+            if (existing != null)
+            {
+                principles.Remove(existing);
+            }
+
+            await _store.Save<List<SecurityPrinciple>>("principles", principles);
+
+            // TODO: remove assigned roles within all resource profiles
+
+            var allResourceProfiles = await GetResourceProfiles(id, contextUserId);
+            foreach (var r in allResourceProfiles)
+            {
+                if (r.AssignedRoles.Any(ro => ro.PrincipleId == id))
+                {
+                    var newAssignedRoles = r.AssignedRoles.Where(ra => ra.PrincipleId != id).ToList();
+                    r.AssignedRoles = newAssignedRoles;
+                }
+            }
+            await _store.Save<List<SecurityPrinciple>>("resourceprofiles", allResourceProfiles);
+
+            _log?.Information($"User {contextUserId} deleted security principle [{id}] {existing?.Username}");
+
+            return true;
+        }
+
+        public async Task<bool> IsPrincipleInRole(string id, string roleId, string contextUserId)
+        {
+            var resourceProfiles = await GetResourceProfiles(id, contextUserId);
+
+            if (resourceProfiles.Any(r => r.ResourceType == StandardResourceTypes.System && r.AssignedRoles.Any(a => a.PrincipleId == id && a.RoleId == roleId)))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+
+        }
+        /// <summary>
+        /// return list of resources this user has some access to
+        /// </summary>
+        /// <param name="contextUserId"></param>
+        /// <returns></returns>
+        public async Task<List<ResourceProfile>> GetResourceProfiles(string userId, string contextUserId)
+        {
+            var allResourceProfiles = await _store.Load<List<ResourceProfile>>("resourceprofiles");
+
+            if (userId != null)
+            {
+                var filteredprofiles = allResourceProfiles.Where(r => r.AssignedRoles.Any(ra => ra.PrincipleId == userId));
+
+                foreach (var f in filteredprofiles)
+                {
+                    f.AssignedRoles = f.AssignedRoles.Where(a => a.PrincipleId == userId).ToList();
+                }
+
+                return filteredprofiles.ToList();
+            }
+            else
+            {
+                return allResourceProfiles;
+            }
+
+        }
+
+        public async Task<bool> AddResourceProfile(ResourceProfile resourceProfile, string contextUserId, bool bypassIntegrityCheck = false)
+        {
+            if (!await IsPrincipleInRole(contextUserId, StandardRoles.Administrator.Id, contextUserId) && !bypassIntegrityCheck)
+            {
+                _log?.Warning($"User {contextUserId} attempted to use AddResourceProfile [{resourceProfile.Identifier}] without being in required role.");
+                return false;
+            }
+
+            var profiles = await GetResourceProfiles(null, contextUserId);
+            profiles.Add(resourceProfile);
+            await _store.Save<List<SecurityPrinciple>>("resourceprofiles", profiles);
+
+            _log?.Information($"User {contextUserId} added resource profile [{resourceProfile.Identifier}]");
+            return true;
+        }
+
     }
 }
