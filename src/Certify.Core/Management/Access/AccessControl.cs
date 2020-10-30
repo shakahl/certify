@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Certify.Models.Providers;
-using Newtonsoft.Json;
 
 namespace Certify.Core.Management.Access
 {
@@ -30,17 +28,20 @@ namespace Certify.Core.Management.Access
         public List<string> SystemRoleIds { get; set; }
 
         public SecurityPrincipleType PrincipleType { get; set; }
+
+        public string AuthKey { get; set; }
     }
 
     public class StandardRoles
     {
         public static Role Administrator { get; } = new Role("sysadmin", "Administrator", "Certify Server Administrator");
         public static Role DomainOwner { get; } = new Role("domain_owner", "Domain Owner", "Controls certificate access for a given domain");
-        public static Role DomainRequestor { get; } = new Role("domain_requestor", "Domain Requestor", "Can request domains");
+        public static Role DomainRequestor { get; } = new Role("subdomain_requestor", "Subdomain Requestor", "Can request new certs for subdomains on a given domain");
         public static Role CertificateConsumer { get; } = new Role("cert_consumer", "Certificate Consumer", "User of a given certificate");
+
     }
 
-    public class StandardResourceTypes
+    public class ResourceTypes
     {
         public static string System { get; } = "system";
         public static string Domain { get; } = "domain";
@@ -72,12 +73,12 @@ namespace Certify.Core.Management.Access
     /// </summary>
     public class ResourceProfile
     {
+        public string Id { get; set; } = new Guid().ToString();
         public string ResourceType { get; set; }
         public string Identifier { get; set; }
         public List<ResourceAssignedRole> AssignedRoles { get; set; }
         // public List<Certify.Models.CertRequestChallengeConfig> DefaultChallenges { get; set; }
     }
-
 
     public interface IObjectStore
     {
@@ -111,7 +112,7 @@ namespace Certify.Core.Management.Access
             return await _store.Load<List<SecurityPrinciple>>("principles");
         }
 
-        public async Task<bool> AddSecurityPrinciple(SecurityPrinciple principle, string contextUserId, bool bypassIntegrityCheck =false)
+        public async Task<bool> AddSecurityPrinciple(SecurityPrinciple principle, string contextUserId, bool bypassIntegrityCheck = false)
         {
             if (!await IsPrincipleInRole(contextUserId, StandardRoles.Administrator.Id, contextUserId) && !bypassIntegrityCheck)
             {
@@ -199,11 +200,45 @@ namespace Certify.Core.Management.Access
             return true;
         }
 
+        public async Task<bool> IsAuthorised(string principleId, string roleId, string resourceType, string identifier, string contextUserId)
+        {
+            var resourceProfiles = await GetResourceProfiles(principleId, contextUserId);
+
+            if (resourceProfiles.Any(r => r.ResourceType == resourceType && r.Identifier == identifier && r.AssignedRoles.Any(a => a.PrincipleId == principleId && a.RoleId == roleId)))
+            {
+                // principle has an exactly matching role granted for this resource
+                return true;
+            }
+
+            if (resourceType == ResourceTypes.Domain && !identifier.Trim().StartsWith("*") && identifier.Contains("."))
+            {
+                // get wildcard for respective domain identifier
+                var identifierComponents = identifier.Split('.');
+
+                var wildcard = "*." + string.Join(".", identifierComponents.Skip(1));
+
+                if (resourceProfiles.Any(r => r.ResourceType == resourceType && r.Identifier == wildcard && r.AssignedRoles.Any(a => a.PrincipleId == principleId && a.RoleId == roleId)))
+                {
+                    // principle has an matching role granted for this resource as a wildcard
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Check security principle is in a given role at the system level
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="roleId"></param>
+        /// <param name="contextUserId"></param>
+        /// <returns></returns>
         public async Task<bool> IsPrincipleInRole(string id, string roleId, string contextUserId)
         {
             var resourceProfiles = await GetResourceProfiles(id, contextUserId);
 
-            if (resourceProfiles.Any(r => r.ResourceType == StandardResourceTypes.System && r.AssignedRoles.Any(a => a.PrincipleId == id && a.RoleId == roleId)))
+            if (resourceProfiles.Any(r => r.ResourceType == ResourceTypes.System && r.AssignedRoles.Any(a => a.PrincipleId == id && a.RoleId == roleId)))
             {
                 return true;
             }
@@ -211,8 +246,8 @@ namespace Certify.Core.Management.Access
             {
                 return false;
             }
-
         }
+
         /// <summary>
         /// return list of resources this user has some access to
         /// </summary>
@@ -237,7 +272,6 @@ namespace Certify.Core.Management.Access
             {
                 return allResourceProfiles;
             }
-
         }
 
         public async Task<bool> AddResourceProfile(ResourceProfile resourceProfile, string contextUserId, bool bypassIntegrityCheck = false)

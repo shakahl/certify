@@ -57,7 +57,7 @@ namespace Certify.Management
             _useWindowsNativeFeatures = useWindowsNativeFeatures;
 
             _serverConfig = SharedUtils.ServiceConfigManager.GetAppServiceConfig();
-
+            
             SettingsManager.LoadAppSettings();
 
             InitLogging(_serverConfig);
@@ -90,7 +90,6 @@ namespace Certify.Management
 
             LoadCertificateAuthorities();
 
-
             // init remaining utilities and optionally enable telematics
             _challengeDiagnostics = new ChallengeDiagnostics(CoreAppSettings.Current.EnableValidationProxyAPI);
 
@@ -119,6 +118,8 @@ namespace Certify.Management
             }
 
             PerformManagedCertificateMigrations().Wait();
+
+            // if jwt auth mode is enabled, init auth key for first windows user
         }
 
         private void LoadCertificateAuthorities()
@@ -170,7 +171,6 @@ namespace Certify.Management
                 }
             }
         }
-
 
         private async Task<IACMEClientProvider> GetACMEProvider(ManagedCertificate managedItem)
         {
