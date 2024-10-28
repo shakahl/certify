@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -156,7 +156,22 @@ namespace Certify.Management
             return results;
         }
 
-        public static void SetSupportedTLSVersions() => ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+        public static void SetSupportedTLSVersions()
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | (SecurityProtocolType)12288;
+                return;
+            }
+            catch
+            {
+                Debug.WriteLine("ServicePointManager.SecurityProtocol : Unable to select Tls 1.3 as supported protocol");
+            }
+
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+            Debug.WriteLine("ServicePointManager.SecurityProtocol : Tls 1.2 is the highest supported protocol");
+
+        }
 
         public static string GetUserAgent()
         {
