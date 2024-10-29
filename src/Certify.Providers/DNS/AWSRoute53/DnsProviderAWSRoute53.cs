@@ -168,9 +168,16 @@ namespace Certify.Providers.DNS.AWSRoute53
 
                 if (targetRecordSet != null)
                 {
-                    targetRecordSet.ResourceRecords.Add(
-                          new ResourceRecord { Value = "\"" + request.RecordValue + "\"" }
-                        );
+                    if (targetRecordSet.ResourceRecords.Any(t => t.Value == "\"" + request.RecordValue + "\""))
+                    {
+                        return new ActionResult { IsSuccess = true, Message = $"Dns Record already exists with required value. Skipping." };
+                    }
+                    else
+                    {
+                        targetRecordSet.ResourceRecords.Add(
+                              new ResourceRecord { Value = "\"" + request.RecordValue + "\"" }
+                            );
+                    }
                 }
                 else
                 {
