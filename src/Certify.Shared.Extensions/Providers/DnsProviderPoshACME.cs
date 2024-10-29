@@ -597,7 +597,8 @@ namespace Certify.Core.Management.Challenges.DNS
                 PropagationDelaySeconds = DefaultPropagationDelay,
                 ProviderParameters = new List<ProviderParameter>
                 {
-                    new ProviderParameter { Key = "GandiTokenInsecure", Name = "Token", IsRequired = true, IsCredential = true, ExtendedConfig = _paramIsSecureStringAltKeyConfig.Replace("PARAMKEY","GandiToken") },
+                    new ProviderParameter { Key = "GandiTokenInsecure", Name = "Legacy API Key", IsRequired = false, IsCredential = true, ExtendedConfig = _paramIsSecureStringAltKeyConfig.Replace("PARAMKEY","GandiToken") },
+                    new ProviderParameter { Key = "GandiPAT", Name = "Personal Access Token", IsRequired = false, IsCredential = true, ExtendedConfig = _paramIsSecureStringConfig },
                     _defaultPropagationDelayParam
                 },
                 ChallengeType = Models.SupportedChallengeTypes.CHALLENGE_TYPE_DNS,
