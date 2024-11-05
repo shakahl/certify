@@ -847,6 +847,13 @@ namespace Certify.Providers.ACME.Anvil
                                 }
                             }
 
+                            if (resumeExistingOrder && managedCertificate.CurrentOrderUri != null)
+                            {
+                                // we were trying to resume an existing order but failed, abandon the original order so we can start a new one
+                                managedCertificate.CurrentOrderUri = null;
+                                resumeExistingOrder = false;
+                            }
+
                             if (abandonRequest || remainingAttempts == 0)
                             {
                                 log?.Error(message);
