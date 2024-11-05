@@ -66,6 +66,8 @@ namespace Certify.Core.Management.Challenges
 #endif
         private DateTimeOffset _lastRequestTime { get; set; }
 
+        public bool EnableChallengeRefresh { get; set; } = true;
+
         private void Log(string msg, bool clearLog = false)
         {
             msg = DateTime.Now + ": " + msg + "\r\n";
@@ -230,7 +232,7 @@ namespace Certify.Core.Management.Challenges
                     }
                     else
                     {
-                        if (key.Length > 8 && !_challengeResponses.ContainsKey(key))
+                        if (key.Length > 8 && !_challengeResponses.ContainsKey(key) && EnableChallengeRefresh)
                         {
                             // if challenge response not in our cache, fetch from local API
                             try
@@ -305,6 +307,8 @@ namespace Certify.Core.Management.Challenges
                             {
                                 SendResponseCode(HttpStatusCode.NotFound, res);
                             }
+
+                            Log($"Requested key not found: {key} challenge response cache contains {_challengeResponses.Keys.Count} keys.");
                         }
                     }
 
@@ -432,6 +436,14 @@ namespace Certify.Core.Management.Challenges
                     _httpListener = null;
                     _apiClient = null;
                 }
+            }
+        }
+
+        public void PopulateChallengeResponseCache(Dictionary<string, string> keyValues)
+        {
+            foreach (var key in keyValues)
+            {
+                _challengeResponses.TryAdd(key.Key, key.Value);
             }
         }
     }
