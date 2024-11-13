@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Certify.Models.Config;
 using Certify.Models.Plugins;
 using Certify.Models.Providers;
+using Certify.Models.Shared.Validation;
 using Certify.Plugins;
 using Newtonsoft.Json;
 
@@ -203,8 +204,17 @@ namespace Certify.Providers.DNS.Cloudflare
             return records;
         }
 
+        private string NormalizeTXTValue(string val)
+        {
+            val = val.Trim("\"".ToCharArray());
+            val = $"\"{val}\""; // cloudflare wants TXT value to be quoted
+
+            return val;
+        }
         private async Task<ActionResult> AddDnsRecord(string zoneId, string name, string value)
         {
+            value = NormalizeTXTValue(value);
+            
             var request = CreateRequest(HttpMethod.Post, string.Format(_createRecordUri, zoneId));
 
             request.Content = new StringContent(
@@ -315,6 +325,7 @@ namespace Certify.Providers.DNS.Cloudflare
 
         public async Task<ActionResult> DeleteRecord(DnsRecord request, bool requireSameValue)
         {
+            request.RecordValue = NormalizeTXTValue(request.RecordValue);
 
             if (string.IsNullOrEmpty(request.RecordName))
             {
