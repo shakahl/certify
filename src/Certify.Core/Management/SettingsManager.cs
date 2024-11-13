@@ -183,6 +183,11 @@ namespace Certify.Management
         /// </summary>
         public bool PerformChallengeCleanupsLast { get; set; }
         public string CurrentServiceVersion { get; set; }
+
+        /// <summary>
+        ///  if true, additional management hub features and data stores may be enabled
+        /// </summary>
+        public bool IsManagementHub { get; set; }
     }
 
     public class SettingsManager
